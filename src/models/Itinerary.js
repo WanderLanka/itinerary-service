@@ -127,6 +127,11 @@ const itinerarySchema = new mongoose.Schema({
     }
   },
   dayPlans: [dayPlanSchema],
+  selectedRoute: {
+    type: String,
+    enum: ['recommended', 'shortest', 'scenic'],
+    required: false // Make it optional instead of default: null
+  },
   totalEstimatedCost: {
     accommodation: { type: Number, default: 0 },
     food: { type: Number, default: 0 },
