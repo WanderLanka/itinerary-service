@@ -152,6 +152,58 @@ const itinerarySchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Method to calculate completion percentage
+itinerarySchema.methods.calculateCompletionPercentage = function() {
+  let totalSteps = 0;
+  let completedSteps = 0;
+
+  // Step 1: Basic trip information (always completed if itinerary exists)
+  totalSteps += 4;
+  if (this.tripName) completedSteps++;
+  if (this.startDate) completedSteps++;
+  if (this.endDate) completedSteps++;
+  if (this.startLocation && this.endLocation) completedSteps++;
+
+  // Step 2: Day plans created
+  totalSteps += 1;
+  if (this.dayPlans && this.dayPlans.length > 0) completedSteps++;
+
+  // Step 3: Places added to day plans
+  totalSteps += 1;
+  const hasPlaces = this.dayPlans?.some(day => day.places && day.places.length > 0);
+  if (hasPlaces) completedSteps++;
+
+  // Step 4: Route selected
+  totalSteps += 1;
+  if (this.selectedRoute) completedSteps++;
+
+  // Calculate percentage
+  const percentage = Math.round((completedSteps / totalSteps) * 100);
+  return percentage;
+};
+
+// Virtual field to get trip duration in days
+itinerarySchema.virtual('tripDuration').get(function() {
+  if (!this.startDate || !this.endDate) return 0;
+  const diffTime = Math.abs(new Date(this.endDate) - new Date(this.startDate));
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
+  return diffDays;
+});
+
+// Virtual field to get days until trip starts
+itinerarySchema.virtual('daysUntilStart').get(function() {
+  if (!this.startDate) return null;
+  const now = new Date();
+  const start = new Date(this.startDate);
+  const diffTime = start - now;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays > 0 ? diffDays : 0;
+});
+
+// Ensure virtuals are included in JSON
+itinerarySchema.set('toJSON', { virtuals: true });
+itinerarySchema.set('toObject', { virtuals: true });
+
 // Indexes for performance
 itinerarySchema.index({ userId: 1, createdAt: -1 });
 itinerarySchema.index({ status: 1 });

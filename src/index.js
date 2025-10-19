@@ -37,12 +37,14 @@ app.get('/health', (req, res) => {
 // Import routes
 const itineraryRoutes = require('./routes/itinerary.routes');
 const routeRoutes = require('./routes/route.routes');
+const myTripsRoutes = require('./routes/myTrips.routes');
 
 // API Routes (without /api prefix since API Gateway handles that)
 // Gateway forwards: /api/itinerary/create → /create
 // So we mount routes at root for itinerary endpoints
 app.use('/', itineraryRoutes);
 app.use('/routes', routeRoutes);
+app.use('/my-trips', myTripsRoutes);
 
 // 404 handler
 app.use((req, res) => {
