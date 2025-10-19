@@ -8,4 +8,7 @@ router.get('/summary', authenticateToken, myTripsController.getMyTrips);
 router.get('/trip/:id', authenticateToken, myTripsController.getTripDetails);
 router.get('/:category', authenticateToken, myTripsController.getTripsByCategory);
 
+// Update checklist item status
+router.patch('/trip/:id/checklist/:itemId', authenticateToken, myTripsController.toggleChecklistItem);
+
 module.exports = router;

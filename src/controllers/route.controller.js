@@ -29,23 +29,70 @@ exports.calculateRoutes = async (req, res) => {
     console.log('✅ Itinerary found:', itinerary.tripName);
     console.log('📍 Start:', itinerary.startLocation?.name);
     console.log('📍 End:', itinerary.endLocation?.name);
-    console.log('📍 Destinations:', itinerary.destinations?.length || 0);
+    console.log('📍 Destinations field:', itinerary.destinations?.length || 0);
+    console.log('📍 Day plans:', itinerary.dayPlans?.length || 0);
 
-    // Build waypoints from itinerary
+    // Extract waypoints from day plans (all places in chronological order)
+    let waypointsFromDayPlans = [];
+    if (itinerary.dayPlans && itinerary.dayPlans.length > 0) {
+      console.log('🗺️  Extracting waypoints from day plans...');
+      itinerary.dayPlans.forEach((day, dayIdx) => {
+        if (day.places && day.places.length > 0) {
+          console.log(`  Day ${day.dayNumber}: ${day.places.length} places`);
+          day.places.forEach((place, placeIdx) => {
+            if (place.location && place.location.latitude && place.location.longitude) {
+              waypointsFromDayPlans.push({
+                latitude: place.location.latitude,
+                longitude: place.location.longitude,
+                name: place.name || `Place ${dayIdx + 1}-${placeIdx + 1}`,
+                placeId: place.placeId
+              });
+              console.log(`    - ${place.name}`);
+            }
+          });
+        }
+      });
+    }
+
+    // Build waypoints:
+    // 1. Start with startLocation
+    // 2. Add destinations from destinations field (if any)
+    // 3. Add places from day plans (if any)
+    // 4. End with endLocation
+    let intermediateWaypoints = [];
+    
+    // Add destinations from destinations field
+    if (itinerary.destinations && itinerary.destinations.length > 0) {
+      intermediateWaypoints.push(...itinerary.destinations);
+    }
+    
+    // Add waypoints from day plans (if available and no destinations field)
+    if (waypointsFromDayPlans.length > 0 && intermediateWaypoints.length === 0) {
+      intermediateWaypoints.push(...waypointsFromDayPlans);
+    }
+
     const waypoints = [
       itinerary.startLocation,
-      ...itinerary.destinations,
+      ...intermediateWaypoints,
       itinerary.endLocation
     ].map(location => ({
       latitude: location.latitude,
       longitude: location.longitude,
-      name: location.name
+      name: location.name,
+      placeId: location.placeId
     }));
 
-    console.log(`\n📍 Building waypoints... Total: ${waypoints.length}`);
-    waypoints.forEach((wp, idx) => {
-      console.log(`  ${idx + 1}. ${wp.name} (${wp.latitude}, ${wp.longitude})`);
-    });
+    console.log(`\n📍 Building final waypoints... Total: ${waypoints.length}`);
+    console.log(`   - Start: ${itinerary.startLocation?.name}`);
+    if (intermediateWaypoints.length > 0) {
+      console.log(`   - Intermediate waypoints: ${intermediateWaypoints.length}`);
+      intermediateWaypoints.forEach((wp, idx) => {
+        console.log(`     ${idx + 1}. ${wp.name}`);
+      });
+    } else {
+      console.log(`   - No intermediate waypoints (direct route)`);
+    }
+    console.log(`   - End: ${itinerary.endLocation?.name}`);
 
     // Calculate all route types
     console.log('\n🧮 Calling Google Directions API...');

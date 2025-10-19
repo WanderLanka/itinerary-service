@@ -25,6 +25,15 @@ exports.getMyTrips = async (req, res) => {
     const allItineraries = await Itinerary.find({ userId }).sort({ createdAt: -1 });
     console.log(`📊 Found ${allItineraries.length} total itineraries for user`);
 
+    // OPTIMIZATION: Fetch all routes in one query to avoid N+1 problem
+    const itineraryIds = allItineraries.map(i => i._id);
+    const allRoutes = await Route.find({ itineraryId: { $in: itineraryIds } }).select('itineraryId');
+    const routeMap = new Map();
+    allRoutes.forEach(route => {
+      routeMap.set(route.itineraryId.toString(), true);
+    });
+    console.log(`📊 Found ${allRoutes.length} total routes for ${itineraryIds.length} itineraries`);
+
     // Categorize itineraries
     const savedPlans = []; // Status: 'planned' (ready to use)
     const unfinishedTrips = []; // Status: 'draft' (incomplete)
@@ -38,9 +47,8 @@ exports.getMyTrips = async (req, res) => {
       const isActive = startDate <= now && endDate >= now;
       const isCompleted = endDate < now;
 
-      // Check if route exists for this itinerary
-      const routeCount = await Route.countDocuments({ itineraryId: itinerary._id });
-      const hasRoute = routeCount > 0;
+      // Check if route exists for this itinerary using the pre-fetched map
+      const hasRoute = routeMap.has(itinerary._id.toString());
 
       const tripData = {
         _id: itinerary._id,
@@ -197,6 +205,27 @@ exports.getMyTripsData = async (userId) => {
   const now = new Date();
   const allItineraries = await Itinerary.find({ userId }).sort({ createdAt: -1 });
 
+  // OPTIMIZATION: Fetch all routes in one query to avoid N+1 problem
+  const itineraryIds = allItineraries.map(i => i._id);
+  const allRoutes = await Route.find({ itineraryId: { $in: itineraryIds } });
+  const routeMap = new Map();
+  allRoutes.forEach(route => {
+    routeMap.set(route.itineraryId.toString(), route);
+  });
+  console.log(`📊 [getMyTripsData] Loaded ${allRoutes.length} routes for ${itineraryIds.length} itineraries`);
+
+  // Also fetch routes by their ObjectId for selectedRoute lookups
+  const selectedRouteIds = allItineraries
+    .map(i => i.selectedRoute)
+    .filter(sr => sr && mongoose.Types.ObjectId.isValid(sr));
+  
+  const selectedRoutes = await Route.find({ _id: { $in: selectedRouteIds } });
+  const selectedRouteMap = new Map();
+  selectedRoutes.forEach(route => {
+    selectedRouteMap.set(route._id.toString(), route);
+  });
+  console.log(`📊 [getMyTripsData] Loaded ${selectedRoutes.length} selected routes`);
+
   const savedPlans = [];
   const unfinishedTrips = [];
   const upcomingTrips = [];
@@ -209,15 +238,10 @@ exports.getMyTripsData = async (userId) => {
     const isActive = startDate <= now && endDate >= now;
     const isCompleted = endDate < now;
 
-    // Get route information - validate ObjectId first
+    // Get route information - use pre-fetched data
     let selectedRoute = null;
     if (itinerary.selectedRoute && mongoose.Types.ObjectId.isValid(itinerary.selectedRoute)) {
-      try {
-        selectedRoute = await Route.findById(itinerary.selectedRoute);
-      } catch (error) {
-        console.error('Error fetching route:', error);
-        selectedRoute = null;
-      }
+      selectedRoute = selectedRouteMap.get(itinerary.selectedRoute.toString()) || null;
     }
 
     // Extract all locations from dayPlans
@@ -346,18 +370,69 @@ exports.getTripDetails = async (req, res) => {
     // Get all routes for this itinerary
     const allRoutes = await Route.find({ itineraryId: itinerary._id });
 
-    // Extract all locations from dayPlans
-    const allLocations = itinerary.dayPlans?.reduce((locs, day) => {
-      if (day.places && day.places.length > 0) {
-        const placeNames = day.places.map(p => p.placeName).filter(Boolean);
-        return [...locs, ...placeNames];
-      }
-      return locs;
-    }, []) || [];
+    // Extract all locations from dayPlans with full details
+    const allLocations = [];
+    const locationNames = [];
+    const allChecklists = [];
+    const allNotes = [];
+    
+    if (itinerary.dayPlans && itinerary.dayPlans.length > 0) {
+      itinerary.dayPlans.forEach((day) => {
+        // Extract places
+        if (day.places && day.places.length > 0) {
+          day.places.forEach((place) => {
+            allLocations.push({
+              _id: place.placeId || place._id,
+              name: place.name,
+              address: place.address || '',
+              location: place.location,
+              coordinates: place.location,
+              image: place.photos && place.photos.length > 0 
+                ? place.photos[0] 
+                : 'https://via.placeholder.com/80',
+              imageUrl: place.photos && place.photos.length > 0 
+                ? place.photos[0] 
+                : 'https://via.placeholder.com/80',
+              rating: place.rating,
+              types: place.types || []
+            });
+            locationNames.push(place.name);
+          });
+        }
+        
+        // Extract checklists from this day
+        if (day.checklists && day.checklists.length > 0) {
+          day.checklists.forEach((checklist) => {
+            if (checklist.items && checklist.items.length > 0) {
+              checklist.items.forEach((item) => {
+                allChecklists.push({
+                  dayNumber: day.dayNumber,
+                  dayDate: day.date,
+                  checklistTitle: checklist.title,
+                  item: item.title,
+                  completed: item.completed,
+                  id: item.id
+                });
+              });
+            }
+          });
+        }
+        
+        // Extract notes from this day
+        if (day.notes && day.notes.trim()) {
+          allNotes.push({
+            dayNumber: day.dayNumber,
+            dayDate: day.date,
+            content: day.notes,
+            createdAt: day.date
+          });
+        }
+      });
+    }
 
     // Generate destination string
-    const destination = allLocations.length > 0 
-      ? allLocations.slice(0, 3).join(', ') + (allLocations.length > 3 ? ` +${allLocations.length - 3} more` : '')
+    const destination = locationNames.length > 0 
+      ? locationNames.slice(0, 3).join(', ') + (locationNames.length > 3 ? ` +${locationNames.length - 3} more` : '')
       : `${itinerary.startLocation.name} to ${itinerary.endLocation.name}`;
 
     const tripDetails = {
@@ -393,6 +468,8 @@ exports.getTripDetails = async (req, res) => {
       placesCount: itinerary.dayPlans?.reduce((sum, day) => sum + (day.places?.length || 0), 0) || 0,
       dayPlans: itinerary.dayPlans || [],
       locations: allLocations,
+      checklist: allChecklists,
+      notes: allNotes,
       tripDuration: itinerary.tripDuration,
       duration: `${itinerary.tripDuration} ${itinerary.tripDuration === 1 ? 'Day' : 'Days'}`,
       daysUntilStart: itinerary.daysUntilStart,
@@ -416,6 +493,87 @@ exports.getTripDetails = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch trip details',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Toggle checklist item completion status
+ * PATCH /my-trips/trip/:id/checklist/:itemId
+ */
+exports.toggleChecklistItem = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id: tripId, itemId } = req.params;
+    const { completed } = req.body; // Optional: specify completed state, otherwise toggle
+
+    console.log(`\n✏️ Toggle Checklist Item - Trip: ${tripId}, Item: ${itemId}, Completed: ${completed}`);
+
+    // Find the itinerary
+    const itinerary = await Itinerary.findOne({ _id: tripId, userId });
+
+    if (!itinerary) {
+      return res.status(404).json({
+        success: false,
+        message: 'Trip not found'
+      });
+    }
+
+    // Find the checklist item in day plans
+    let itemFound = false;
+    let updatedItem = null;
+
+    for (const dayPlan of itinerary.dayPlans) {
+      if (dayPlan.checklists && dayPlan.checklists.length > 0) {
+        for (const checklist of dayPlan.checklists) {
+          if (checklist.items && checklist.items.length > 0) {
+            const item = checklist.items.find(i => i.id === itemId);
+            if (item) {
+              // Toggle or set the completed status
+              if (completed !== undefined) {
+                item.completed = completed;
+              } else {
+                item.completed = !item.completed;
+              }
+              updatedItem = {
+                id: item.id,
+                title: item.title,
+                completed: item.completed,
+                dayNumber: dayPlan.dayNumber
+              };
+              itemFound = true;
+              break;
+            }
+          }
+        }
+      }
+      if (itemFound) break;
+    }
+
+    if (!itemFound) {
+      return res.status(404).json({
+        success: false,
+        message: 'Checklist item not found'
+      });
+    }
+
+    // Save the updated itinerary
+    await itinerary.save();
+
+    console.log(`✅ Checklist item updated:`, updatedItem);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Checklist item updated successfully',
+      data: updatedItem
+    });
+
+  } catch (error) {
+    console.error('❌ Error toggling checklist item:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update checklist item',
       error: error.message
     });
   }
