@@ -38,8 +38,15 @@ class GoogleDirectionsService {
           .map(wp => `${wp.latitude},${wp.longitude}`)
           .join('|');
         params.waypoints = optimize ? `optimize:true|${intermediateWaypoints}` : intermediateWaypoints;
+        console.log(`🗺️  Including ${waypoints.length - 2} intermediate waypoints in request`);
+        console.log(`   Waypoints param: ${params.waypoints.substring(0, 100)}...`);
+      } else {
+        console.log('⚠️  No intermediate waypoints (direct route from start to end)');
       }
 
+      console.log('📡 Calling Google Directions API...');
+      console.log(`   Origin: ${origin}`);
+      console.log(`   Destination: ${destination}`);
       const response = await axios.get(this.baseUrl, { params });
 
       if (response.data.status !== 'OK') {
@@ -98,7 +105,12 @@ class GoogleDirectionsService {
    */
   parseDirectionsResponse(data) {
     const route = data.routes[0]; // Use first route
-    const leg = route.legs[0]; // Single leg for simplicity
+    
+    console.log(`📊 Parsing route with ${route.legs.length} legs`);
+    route.legs.forEach((leg, idx) => {
+      console.log(`   Leg ${idx + 1}: ${leg.start_address} → ${leg.end_address}`);
+      console.log(`     Distance: ${(leg.distance.value / 1000).toFixed(1)}km, Duration: ${(leg.duration.value / 60).toFixed(0)}min`);
+    });
 
     const segments = route.legs.map(leg => ({
       startPoint: {
@@ -129,7 +141,7 @@ class GoogleDirectionsService {
       }))
     }));
 
-    return {
+    const result = {
       totalDistance: route.legs.reduce((sum, leg) => sum + leg.distance.value, 0),
       totalDuration: route.legs.reduce((sum, leg) => sum + leg.duration.value, 0),
       segments,
@@ -139,6 +151,11 @@ class GoogleDirectionsService {
         summary: route.summary
       }
     };
+    
+    console.log(`✅ Route parsed: ${(result.totalDistance / 1000).toFixed(1)}km, ${(result.totalDuration / 60).toFixed(0)}min`);
+    console.log(`   Overview polyline length: ${route.overview_polyline.points.length} chars`);
+    
+    return result;
   }
 
   /**

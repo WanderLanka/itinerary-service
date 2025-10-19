@@ -56,19 +56,20 @@ exports.calculateRoutes = async (req, res) => {
 
     // Build waypoints:
     // 1. Start with startLocation
-    // 2. Add destinations from destinations field (if any)
-    // 3. Add places from day plans (if any)
+    // 2. Add places from day plans (primary source)
+    // 3. If no day plan places, fall back to destinations field
     // 4. End with endLocation
     let intermediateWaypoints = [];
     
-    // Add destinations from destinations field
-    if (itinerary.destinations && itinerary.destinations.length > 0) {
-      intermediateWaypoints.push(...itinerary.destinations);
-    }
-    
-    // Add waypoints from day plans (if available and no destinations field)
-    if (waypointsFromDayPlans.length > 0 && intermediateWaypoints.length === 0) {
+    // Prefer waypoints from day plans (these are the actual planned locations)
+    if (waypointsFromDayPlans.length > 0) {
       intermediateWaypoints.push(...waypointsFromDayPlans);
+      console.log(`✅ Using ${waypointsFromDayPlans.length} waypoints from day plans`);
+    } 
+    // Fall back to destinations field if no day plan places
+    else if (itinerary.destinations && itinerary.destinations.length > 0) {
+      intermediateWaypoints.push(...itinerary.destinations);
+      console.log(`✅ Using ${itinerary.destinations.length} waypoints from destinations field`);
     }
 
     const waypoints = [
@@ -159,6 +160,15 @@ exports.calculateRoutes = async (req, res) => {
     Object.entries(savedRoutes).forEach(([type, route]) => {
       console.log(`  - ${type}: ${(route.totalDistance / 1000).toFixed(1)}km, ${(route.totalDuration / 60).toFixed(0)}min, LKR ${route.estimatedCosts.total}`);
     });
+
+    // Update itinerary with selectedRoute (default to recommended)
+    console.log('\n🔄 Updating itinerary with default selectedRoute...');
+    await Itinerary.findByIdAndUpdate(
+      itineraryId,
+      { selectedRoute: 'recommended' },
+      { new: true }
+    );
+    console.log('✅ Itinerary updated with selectedRoute: recommended');
 
     res.json({
       success: true,
