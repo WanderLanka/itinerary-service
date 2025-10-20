@@ -147,6 +147,12 @@ const itinerarySchema = new mongoose.Schema({
   isPublic: {
     type: Boolean,
     default: false
+  },
+  // Store booking IDs for services booked through this itinerary
+  bookingIds: {
+    accommodations: [String], // Array of accommodation booking IDs
+    transportation: [String],  // Array of transportation booking IDs
+    guides: [String]          // Array of guide booking IDs
   }
 }, {
   timestamps: true

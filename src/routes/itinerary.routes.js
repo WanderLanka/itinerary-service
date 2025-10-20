@@ -11,6 +11,7 @@ router.get('/places/:placeId', itineraryController.getPlaceDetails);
 // Protected routes (auth required)
 router.post('/create', authenticateToken, itineraryController.createItinerary);
 router.post('/generate', authenticateToken, itineraryController.generateItinerary);
+router.post('/store-completed-trip', authenticateToken, itineraryController.storeCompletedTrip);
 router.get('/user', authenticateToken, itineraryController.getUserItineraries);
 router.get('/:id', authenticateToken, itineraryController.getItinerary);
 router.put('/:id', authenticateToken, itineraryController.updateItinerary);
